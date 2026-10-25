@@ -39,8 +39,21 @@ const VPN_CACHE_FILE = new URL('./data/vpn-ip-ranges.txt', import.meta.url);
 const VPN_LIST_URLS = [
   'https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt',
   'https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv6.txt',
+  'https://raw.githubusercontent.com/Joe12387/open-source-vpn-ip-lists/master/airvpn.txt',
+  'https://raw.githubusercontent.com/Joe12387/open-source-vpn-ip-lists/master/ivpn.txt',
+  'https://raw.githubusercontent.com/Joe12387/open-source-vpn-ip-lists/master/mullvad.txt',
+  'https://raw.githubusercontent.com/Joe12387/open-source-vpn-ip-lists/master/nordvpn.txt',
+  'https://raw.githubusercontent.com/Joe12387/open-source-vpn-ip-lists/master/ovpn.txt',
+  'https://raw.githubusercontent.com/Joe12387/open-source-vpn-ip-lists/master/pia.txt',
+  'https://raw.githubusercontent.com/Joe12387/open-source-vpn-ip-lists/master/protonvpn.txt',
+  'https://raw.githubusercontent.com/Joe12387/open-source-vpn-ip-lists/master/riseupvpn.txt',
+  'https://raw.githubusercontent.com/Joe12387/open-source-vpn-ip-lists/master/surfshark.txt',
+  'https://raw.githubusercontent.com/Joe12387/open-source-vpn-ip-lists/master/windscribe.txt',
+  'https://raw.githubusercontent.com/tn3w/ProtonVPN-IPs/master/protonvpn_ip_ranges.txt',
 ];
 const VPN_LIST_REFRESH_MS = 12 * 60 * 60 * 1000;
+const TERMS_VERSION = '6';
+const PRIVACY_VERSION = '7';
 let vpnRanges = [];
 let ipHashKey;
 const pendingAuthStart = new Map();
@@ -68,12 +81,18 @@ const LANGUAGES = {
     missingManageChannels: 'I need the **Manage Channels** permission to create the verification channel.',
     channelCreateFailed: (reason) => `I could not create the channel: ${reason}`,
     verifyTitle: 'AntiAlt Verification',
-    verifyDescription: 'Click Verify to authenticate your Yapin’ account. After sign-in, you will be asked to accept the Terms of Service and Privacy Notice. After you accept, AntiAlt stores your server ID, authenticated account ID, a hash of a random browser cookie, and a keyed hash of your IP address to prevent repeat verification from the same browser or IP. No raw IP or hardware identifier is stored.',
+    verifyDescription: 'Click Verify to authenticate your Yapin’ account. After sign-in, you must accept the Terms and Privacy Notice and the disclosed browser fingerprint check. AntiAlt stores a random browser-cookie hash, a keyed IP hash, and a keyed hash of browser/system details. It does not store raw IPs or hardware serial numbers.',
     termsTitle: 'Terms of Service',
-    termsText: 'By continuing, you agree to use AntiAlt only for server safety and to provide accurate account information. Verification is limited to one Yapin’ account per server, IP address, and browser profile. AntiAlt also checks the callback IP against a public list of known VPN networks; a match blocks verification. People sharing an IP address, VPN, or network may be grouped and blocked together. A browser profile is not a physical-device identifier. Server administrators control this bot and its verification settings.',
+    termsText: 'By continuing, you agree to use AntiAlt only for server safety and to provide accurate account information. Verification is limited to one Yapin’ account per server, IP address, browser profile, and the disclosed browser fingerprint. AntiAlt also checks the callback IP against a public list of known VPN networks; a match blocks verification. People sharing an IP address, VPN, or network may be grouped and blocked together. The fingerprint uses browser and system details; it is not a hardware serial number or guaranteed physical-device ID. If you choose to remember your decision, a signed browser cookie will remember this account’s acceptance while the cookie remains valid and the policy version is current. Browsers may expire or clear cookies. Server administrators control this bot and its verification settings.',
     privacyTitle: 'Privacy Notice',
-    privacyText: 'After you accept, AntiAlt stores your Yapin’ account ID and username, server ID, consent and verification timestamps, plus a SHA-256 hash of a random first-party browser cookie and a keyed HMAC-SHA-256 hash of the IP address observed by the callback after consent. Raw IP addresses are not stored. The IP is also checked locally against the public X4BNet VPN network list downloaded from GitHub; it is not sent to a separate IP lookup service. A match blocks verification. Browser hashes do not identify physical hardware and do not work across browsers. Shared IPs, VPNs, or networks can cause accounts to be grouped. The bot operator can access these records. Ask the server administrators to request deletion.',
+    privacyText: 'After you accept both checkboxes, AntiAlt stores your Yapin’ account ID and username, server ID, consent and verification timestamps, a SHA-256 hash of a random first-party browser cookie, a keyed HMAC-SHA-256 hash of your IP, and a server-keyed HMAC hash of a browser fingerprint. JavaScript calculates the fingerprint locally from browser version/user agent, platform, language, time zone, screen size and color depth, pixel ratio, and available CPU-thread and device-memory values. Only its SHA-256 digest is sent; raw feature values are not stored. The fingerprint can change or be shared and is not a hardware serial number or guaranteed physical-device ID. Raw IP addresses are not stored. The IP is checked locally against public VPN server lists from X4BNet, the Open Source VPN IP Lists project, and the daily ProtonVPN-IPs project; it is not sent to a separate IP lookup service. The ProtonVPN sources do not distinguish free from paid servers. One source expands Proton server IPs to /24 IPv4 ranges to catch exit traffic that uses nearby addresses; this can also block non-VPN addresses in those ranges. If you select “Remember my decision,” a signed HttpOnly cookie stores hashes of this account, browser, and fingerprint plus the accepted policy versions. It suppresses future consent prompts for this account on this browser while the cookie remains valid and the policy version is current; browsers may expire or clear cookies. Shared IPs, VPNs, or devices can cause accounts to be grouped. The bot operator can access these records. Ask the server administrators to request deletion.',
     consentQuestion: 'Do you accept our Terms of Service & Privacy Policy?',
+    consentCheckboxLabel: 'I have read and agree to the Terms of Service and Privacy Notice.',
+    deviceConsentCheckboxLabel: 'I agree to AntiAlt creating a browser fingerprint from the disclosed browser and system details.',
+    deviceConsentRequiredError: 'Check the browser fingerprint agreement box to continue.',
+    rememberConsentLabel: 'Remember my decision on this browser for this Yapin’ account.',
+    consentRequiredError: 'Check the agreement box to continue.',
+    fingerprintUnavailable: 'AntiAlt could not create the required browser fingerprint. Enable JavaScript and try again.',
     consentYes: 'Yes, I accept',
     consentNo: 'No, I do not accept',
     consentDeclined: 'You declined. No verification data was saved.',
@@ -82,7 +101,7 @@ const LANGUAGES = {
     oauthStart: (url) => `Your secure sign-in link (valid for 15 minutes): ${url}`,
     deviceRefresh: (url) => `You're already verified. Accept the updated Privacy Notice here to activate browser duplicate checks: ${url}`,
     duplicateBrowserTitle: 'Alt Account Attempt Blocked',
-    duplicateBrowser: 'This account matched a previous verification from this server by IP hash or browser profile. It was not verified, and its verification role was removed if it had one. AntiAlt stores a keyed IP hash and browser-cookie hash, not the raw IP or a hardware ID. Shared networks can cause false positives; contact a server administrator if you think this is a mistake.',
+    duplicateBrowser: 'This account matched a previous verification from this server by IP hash, browser cookie, or browser fingerprint. It was not verified, and its verification role was removed if it had one. AntiAlt stores hashes, not the raw IP or a hardware serial number. Shared networks and similar devices can cause false positives; contact a server administrator if you think this is a mistake.',
     oauthNotConfigured: 'OAuth sign-in is not configured. Please ask a server admin for help.',
     oauthSuccess: 'Your Yapin’ account has been verified for this server.',
     oauthFailure: 'Sign-in could not be completed or expired. Click Verify to start again.',
@@ -101,6 +120,7 @@ const LANGUAGES = {
     verified: (username) => `Verified as **${username}**. This verification is stored for this server only.`,
     saveFailed: 'I could not save your verification right now. Please try again later.',
     vpnBlocked: 'Verification blocked: this IP matches a known VPN network. Disconnect from the VPN and try again. If this is a mistake, contact a server administrator.',
+    ipSecurityUnavailable: 'Verification is temporarily unavailable because AntiAlt could not read a valid visitor IP. The server administrator may need to enable trusted proxy IP forwarding.',
     manualUsage: 'Usage: `/manual-verify username` or `/manual-unverify username`.',
     manualOwnerOnly: 'Only this server’s owner can use manual verification commands.',
     memberNotFound: (name) => `I could not find **${name}** in this server. Use the exact Yapin’ username or a user ID.`,
@@ -118,12 +138,18 @@ const LANGUAGES = {
     missingManageChannels: 'Mir fehlt die Berechtigung **Kanäle verwalten**, um den Verifizierungskanal zu erstellen.',
     channelCreateFailed: (reason) => `Der Kanal konnte nicht erstellt werden: ${reason}`,
     verifyTitle: 'AntiAlt-Verifizierung',
-    verifyDescription: 'Klicke auf Verifizieren, um deinen Yapin’-Account anzumelden. Nach der Anmeldung wirst du gefragt, ob du den Nutzungsbedingungen und dem Datenschutzhinweis zustimmst. Nach deiner Zustimmung speichert AntiAlt Server-ID, bestätigte Account-ID, einen Hash eines zufälligen Browser-Cookies und einen keyed HMAC-SHA-256-Hash der vom Callback erkannten IP-Adresse, um Wiederholungen aus demselben Browser oder derselben IP zu verhindern. Rohe IP-Adressen und Hardware-Kennungen werden nicht gespeichert.',
+    verifyDescription: 'Klicke auf Verifizieren, um deinen Yapin’-Account anzumelden. Nach der Anmeldung musst du den Bedingungen, dem Datenschutzhinweis und dem offengelegten Browser-Fingerprint zustimmen. AntiAlt speichert einen Browser-Cookie-Hash, einen keyed IP-Hash und einen keyed Hash von Browser-/Systemmerkmalen. Rohe IP-Adressen und Hardware-Seriennummern werden nicht gespeichert.',
     termsTitle: 'Nutzungsbedingungen',
-    termsText: 'Wenn du fortfährst, stimmst du zu, AntiAlt nur zur Sicherheit des Servers zu nutzen und korrekte Account-Informationen anzugeben. Die Verifizierung ist auf einen Yapin’-Account pro Server, IP-Adresse und Browserprofil begrenzt. Zusätzlich vergleicht AntiAlt die Callback-IP mit einer öffentlichen Liste bekannter VPN-Netzwerke; ein Treffer blockiert die Verifizierung. Personen mit gemeinsamer IP, VPN oder gemeinsamem Netzwerk können zusammengefasst und blockiert werden. Ein Browserprofil ist keine physische Gerätekennung. Die Server-Admins verwalten diesen Bot und seine Einstellungen.',
+    termsText: 'Wenn du fortfährst, stimmst du zu, AntiAlt nur zur Sicherheit des Servers zu nutzen und korrekte Account-Informationen anzugeben. Die Verifizierung ist auf einen Yapin’-Account pro Server, IP-Adresse, Browserprofil und den offengelegten Browser-Fingerprint begrenzt. Zusätzlich vergleicht AntiAlt die Callback-IP mit einer öffentlichen Liste bekannter VPN-Netzwerke; ein Treffer blockiert die Verifizierung. Personen mit gemeinsamer IP, VPN oder gemeinsamem Netzwerk können zusammengefasst und blockiert werden. Der Fingerprint nutzt Browser- und Systemmerkmale, ist aber keine Hardware-Seriennummer oder garantierte physische Geräte-ID. Wenn du deine Entscheidung speichern lässt, merkt sich ein signiertes Browser-Cookie die Zustimmung dieses Accounts, solange das Cookie gültig und die Richtlinien-Version aktuell ist. Browser können Cookies löschen oder vorzeitig ablaufen lassen. Die Server-Admins verwalten diesen Bot und seine Einstellungen.',
     privacyTitle: 'Datenschutzhinweis',
-    privacyText: 'Nach deiner Zustimmung speichert AntiAlt deine Yapin’-Account-ID und deinen Nutzernamen, Server-ID, Zustimmungs- und Verifizierungszeitpunkte, einen SHA-256-Hash eines zufälligen Erstanbieter-Browser-Cookies und einen keyed HMAC-SHA-256-Hash der vom Callback erkannten IP-Adresse. Rohe IP-Adressen werden nicht gespeichert. Die IP wird lokal mit der öffentlichen X4BNet-VPN-Netzwerkliste verglichen, die von GitHub geladen wird; sie wird nicht an einen separaten IP-Abfragedienst gesendet. Ein Treffer blockiert die Verifizierung. Browser-Hashes identifizieren keine Hardware und funktionieren nicht browserübergreifend. Gemeinsame IPs, VPNs oder Netzwerke können Accounts zusammenfassen. Der Bot-Betreiber kann auf diese Daten zugreifen. Bitte die Server-Admins um Löschung.',
+    privacyText: 'Nach beiden Zustimmungen speichert AntiAlt deine Yapin’-Account-ID und deinen Nutzernamen, Server-ID, Zustimmungs- und Verifizierungszeitpunkte, einen SHA-256-Hash eines zufälligen Erstanbieter-Browser-Cookies, einen keyed HMAC-SHA-256-Hash der IP und einen server-keyed HMAC-Hash des Browser-Fingerprints. JavaScript berechnet den Fingerprint lokal aus Browser-Version/User-Agent, Plattform, Sprache, Zeitzone, Bildschirmgröße und Farbtiefe, Pixeldichte sowie verfügbaren CPU-Thread- und Gerätespeicherwerten. Nur der SHA-256-Digest wird gesendet; die Rohmerkmale werden nicht gespeichert. Der Fingerprint kann sich ändern oder geteilt werden und ist keine Hardware-Seriennummer oder garantierte Geräte-ID. Rohe IP-Adressen werden nicht gespeichert. Die IP wird lokal mit öffentlichen VPN-Serverlisten von X4BNet, dem Projekt Open Source VPN IP Lists und dem täglich aktualisierten Projekt ProtonVPN-IPs verglichen; sie wird nicht an einen separaten IP-Abfragedienst gesendet. Die ProtonVPN-Quellen unterscheiden nicht zwischen kostenlosen und kostenpflichtigen Servern. Eine Quelle erweitert Proton-Server-IP-Adressen auf IPv4-/24-Netze, um Exit-Traffic über benachbarte Adressen zu erfassen; dadurch können auch Nicht-VPN-Adressen in diesen Netzen blockiert werden. Wenn du „Meine Entscheidung speichern“ aktivierst, enthält ein signiertes HttpOnly-Cookie Hashes dieses Yapin’-Accounts, des Browsers und des Fingerprints sowie die akzeptierten Richtlinien-Versionen. Es unterdrückt weitere Zustimmungsfragen für diesen Account in diesem Browser, solange das Cookie gültig und die Richtlinien-Version aktuell ist; Browser können Cookies löschen oder vorzeitig ablaufen lassen. Gemeinsame IPs, VPNs oder Geräte können Accounts zusammenfassen. Der Bot-Betreiber kann auf diese Daten zugreifen. Bitte die Server-Admins um Löschung.',
     consentQuestion: 'Akzeptierst du unsere Nutzungsbedingungen und Datenschutzerklärung?',
+    consentCheckboxLabel: 'Ich habe die Nutzungsbedingungen und den Datenschutzhinweis gelesen und stimme ihnen zu.',
+    deviceConsentCheckboxLabel: 'Ich stimme zu, dass AntiAlt aus den offengelegten Browser- und Systemdaten einen Browser-Fingerprint erstellt.',
+    deviceConsentRequiredError: 'Aktiviere das Zustimmungsfeld für den Browser-Fingerprint, um fortzufahren.',
+    rememberConsentLabel: 'Meine Entscheidung in diesem Browser für diesen Yapin’-Account speichern.',
+    consentRequiredError: 'Aktiviere das Zustimmungsfeld, um fortzufahren.',
+    fingerprintUnavailable: 'AntiAlt konnte den erforderlichen Browser-Fingerprint nicht erstellen. Aktiviere JavaScript und versuche es erneut.',
     consentYes: 'Ja, ich stimme zu',
     consentNo: 'Nein, ich stimme nicht zu',
     consentDeclined: 'Du hast abgelehnt. Es wurden keine Verifizierungsdaten gespeichert.',
@@ -132,7 +158,7 @@ const LANGUAGES = {
     oauthStart: (url) => `Dein sicherer Anmeldelink (15 Minuten gültig): ${url}`,
     deviceRefresh: (url) => `Du bist bereits verifiziert. Stimme hier dem aktualisierten Datenschutzhinweis zu, um Browser-Duplikatprüfungen zu aktivieren: ${url}`,
     duplicateBrowserTitle: 'Alt-Account-Versuch blockiert',
-    duplicateBrowser: 'Dieser Account stimmt beim IP-Hash oder Browserprofil mit einer früheren Verifizierung in diesem Server überein. Er wurde nicht verifiziert; eine vorhandene Verifizierungsrolle wurde nach Möglichkeit entfernt. AntiAlt speichert einen keyed IP-Hash und Browser-Cookie-Hash, nicht die rohe IP oder eine Hardware-ID. Gemeinsame Netzwerke können Fehlalarme verursachen; wende dich bei einem vermuteten Fehler an einen Server-Admin.',
+    duplicateBrowser: 'Dieser Account stimmt beim IP-Hash, Browser-Cookie oder Browser-Fingerprint mit einer früheren Verifizierung in diesem Server überein. Er wurde nicht verifiziert; eine vorhandene Verifizierungsrolle wurde nach Möglichkeit entfernt. AntiAlt speichert Hashes, nicht die rohe IP oder eine Hardware-Seriennummer. Gemeinsame Netzwerke und ähnliche Geräte können Fehlalarme verursachen; wende dich bei einem vermuteten Fehler an einen Server-Admin.',
     oauthNotConfigured: 'OAuth-Anmeldung ist nicht konfiguriert. Bitte wende dich an einen Server-Admin.',
     oauthSuccess: 'Dein Yapin’-Account wurde für diesen Server verifiziert.',
     oauthFailure: 'Die Anmeldung ist fehlgeschlagen oder abgelaufen. Klicke erneut auf Verifizieren.',
@@ -151,6 +177,7 @@ const LANGUAGES = {
     verified: (username) => `Als **${username}** verifiziert. Diese Bestätigung wird nur für diesen Server gespeichert.`,
     saveFailed: 'Deine Verifizierung konnte gerade nicht gespeichert werden. Bitte versuche es später erneut.',
     vpnBlocked: 'Verifizierung blockiert: Diese IP-Adresse stimmt mit einem bekannten VPN-Netzwerk überein. Trenne die VPN-Verbindung und versuche es erneut. Bei einem Fehler wende dich an einen Server-Admin.',
+    ipSecurityUnavailable: 'Die Verifizierung ist vorübergehend nicht verfügbar, weil AntiAlt keine gültige Besucher-IP erhalten hat. Ein Server-Admin muss möglicherweise die vertrauenswürdige IP-Weitergabe des Proxys aktivieren.',
     manualUsage: 'Verwendung: `/manual-verify username` oder `/manual-unverify username`.',
     manualOwnerOnly: 'Nur der Serverinhaber kann manuelle Verifizierungsbefehle verwenden.',
     memberNotFound: (name) => `Ich konnte **${name}** in diesem Server nicht finden. Verwende den exakten Yapin’-Nutzernamen oder eine User-ID.`,
@@ -168,12 +195,18 @@ const LANGUAGES = {
     missingManageChannels: 'Necesito el permiso **Administrar canales** para crear el canal de verificación.',
     channelCreateFailed: (reason) => `No pude crear el canal: ${reason}`,
     verifyTitle: 'Verificación de AntiAlt',
-    verifyDescription: 'Pulsa Verificar para autenticar tu cuenta de Yapin’. Después del inicio de sesión, se te preguntará si aceptas los Términos de servicio y el Aviso de privacidad. Tras aceptar, AntiAlt guarda el ID del servidor, el ID de la cuenta, un hash de una cookie aleatoria del navegador y un hash HMAC-SHA-256 con clave de la IP detectada por el callback para impedir verificaciones repetidas desde el mismo navegador o IP. No guarda la IP sin procesar ni identificadores de hardware.',
+    verifyDescription: 'Pulsa Verificar para autenticar tu cuenta de Yapin’. Después del inicio de sesión, debes aceptar los términos, el aviso de privacidad y la comprobación de huella descrita. AntiAlt guarda un hash de cookie aleatoria, un hash de IP con clave y un hash con clave de los datos del navegador y sistema. No guarda IPs sin procesar ni números de serie de hardware.',
     termsTitle: 'Términos de servicio',
-    termsText: 'Al continuar, aceptas usar AntiAlt solo para la seguridad del servidor y proporcionar información de cuenta correcta. Se limita a una cuenta de Yapin’ por servidor, dirección IP y perfil del navegador. AntiAlt también compara la IP de retorno con una lista pública de redes VPN conocidas; una coincidencia bloquea la verificación. Las personas que compartan IP, VPN o red pueden agruparse y bloquearse juntas. El perfil del navegador no identifica el dispositivo físico. Los administradores controlan este bot y su configuración.',
+    termsText: 'Al continuar, aceptas usar AntiAlt solo para la seguridad del servidor y proporcionar información de cuenta correcta. Se limita a una cuenta de Yapin’ por servidor, dirección IP, perfil del navegador y la huella descrita. AntiAlt también compara la IP de retorno con una lista pública de redes VPN conocidas; una coincidencia bloquea la verificación. Las personas que compartan IP, VPN o red pueden agruparse y bloquearse juntas. La huella usa datos del navegador y sistema, pero no es un número de serie ni una identificación física garantizada. Si eliges recordar tu decisión, una cookie firmada recordará la aceptación de esta cuenta mientras la cookie siga válida y la versión de la política esté vigente. El navegador puede borrar o caducar las cookies. Los administradores controlan este bot y su configuración.',
     privacyTitle: 'Aviso de privacidad',
-    privacyText: 'Tras aceptar, AntiAlt guarda tu ID de cuenta de Yapin’, nombre de usuario, ID del servidor, fechas de consentimiento/verificación, un hash SHA-256 de una cookie aleatoria del navegador y un hash HMAC-SHA-256 con clave de la IP observada por el callback. No se guardan IPs sin procesar. La IP se compara localmente con la lista pública de redes VPN de X4BNet descargada desde GitHub; no se envía a otro servicio de consulta. Una coincidencia bloquea la verificación. El hash del navegador no identifica hardware ni funciona entre navegadores. Las IPs, VPNs o redes compartidas pueden agrupar cuentas. El operador del bot puede acceder a estos datos. Solicita su eliminación a los administradores del servidor.',
+    privacyText: 'Tras aceptar ambas casillas, AntiAlt guarda tu ID de Yapin’, nombre de usuario, ID del servidor, fechas de consentimiento/verificación, un hash SHA-256 de una cookie aleatoria, un hash HMAC-SHA-256 con clave de la IP y un hash HMAC con clave de la huella del navegador. JavaScript calcula localmente la huella a partir de la versión/User-Agent, plataforma, idioma, zona horaria, tamaño y profundidad de color de pantalla, densidad de píxeles y valores disponibles de hilos de CPU y memoria. Solo se envía el digest SHA-256; no se guardan los datos originales. La huella puede cambiar o compartirse y no es un número de serie ni una identificación física garantizada. No se guardan IPs sin procesar. La IP se compara localmente con listas públicas de servidores VPN de X4BNet, del proyecto Open Source VPN IP Lists y del proyecto ProtonVPN-IPs, actualizado a diario; no se envía a otro servicio de consulta. Las fuentes de ProtonVPN no diferencian entre servidores gratuitos y de pago. Una fuente amplía las IPs de servidores Proton a rangos IPv4 /24 para detectar tráfico de salida mediante direcciones cercanas; esto también puede bloquear direcciones que no sean VPN dentro de esos rangos. Si seleccionas “Recordar mi decisión”, una cookie firmada HttpOnly guarda hashes de esta cuenta de Yapin’, del navegador y de la huella, junto con las versiones aceptadas. No volverá a aparecer la pregunta para esta cuenta en este navegador mientras la cookie siga válida y la versión de la política esté vigente; el navegador puede borrar o caducar las cookies. Las IPs, VPNs o dispositivos compartidos pueden agrupar cuentas. El operador del bot puede acceder a estos datos. Solicita su eliminación a los administradores del servidor.',
     consentQuestion: '¿Aceptas nuestros Términos de servicio y Política de privacidad?',
+    consentCheckboxLabel: 'He leído y acepto los Términos de servicio y el Aviso de privacidad.',
+    deviceConsentCheckboxLabel: 'Acepto que AntiAlt cree una huella del navegador con los datos del navegador y sistema descritos.',
+    deviceConsentRequiredError: 'Marca la casilla de consentimiento para la huella del navegador.',
+    rememberConsentLabel: 'Recordar mi decisión en este navegador para esta cuenta de Yapin’.',
+    consentRequiredError: 'Marca la casilla de aceptación para continuar.',
+    fingerprintUnavailable: 'AntiAlt no pudo crear la huella requerida. Activa JavaScript e inténtalo de nuevo.',
     consentYes: 'Sí, acepto',
     consentNo: 'No, no acepto',
     consentDeclined: 'Has rechazado. No se guardaron datos de verificación.',
@@ -182,7 +215,7 @@ const LANGUAGES = {
     oauthStart: (url) => `Tu enlace seguro de inicio de sesión (válido durante 15 minutos): ${url}`,
     deviceRefresh: (url) => `Ya estás verificado. Acepta aquí el Aviso de privacidad actualizado para activar la detección de duplicados del navegador: ${url}`,
     duplicateBrowserTitle: 'Intento de cuenta alternativa bloqueado',
-    duplicateBrowser: 'Esta cuenta coincide con una verificación anterior de este servidor por hash de IP o perfil del navegador. No fue verificada y se quitó su rol si lo tenía. AntiAlt guarda un hash de IP con clave y un hash de cookie, no la IP sin procesar ni una ID de hardware. Las redes compartidas pueden causar falsos positivos; contacta con un administrador si crees que es un error.',
+    duplicateBrowser: 'Esta cuenta coincide con una verificación anterior por hash de IP, cookie o huella del navegador. No fue verificada y se quitó su rol si lo tenía. AntiAlt guarda hashes, no la IP sin procesar ni un número de serie de hardware. Las redes compartidas y dispositivos similares pueden causar falsos positivos; contacta con un administrador si crees que es un error.',
     oauthNotConfigured: 'El inicio de sesión OAuth no está configurado. Pide ayuda a un administrador.',
     oauthSuccess: 'Tu cuenta de Yapin’ se verificó para este servidor.',
     oauthFailure: 'No se pudo completar el inicio de sesión o ha caducado. Pulsa Verificar para intentarlo de nuevo.',
@@ -201,6 +234,7 @@ const LANGUAGES = {
     verified: (username) => `Verificado como **${username}**. Esta verificación solo se guarda para este servidor.`,
     saveFailed: 'No pude guardar tu verificación ahora. Inténtalo de nuevo más tarde.',
     vpnBlocked: 'Verificación bloqueada: esta IP coincide con una red VPN conocida. Desconecta la VPN e inténtalo de nuevo. Si es un error, contacta con un administrador.',
+    ipSecurityUnavailable: 'La verificación no está disponible porque AntiAlt no recibió una IP válida del visitante. Es posible que un administrador deba activar el reenvío de IP del proxy de confianza.',
     manualUsage: 'Uso: `/manual-verify username` o `/manual-unverify username`.',
     manualOwnerOnly: 'Solo el propietario del servidor puede usar los comandos de verificación manual.',
     memberNotFound: (name) => `No encontré a **${name}** en este servidor. Usa el nombre exacto de Yapin’ o el ID del usuario.`,
@@ -265,9 +299,14 @@ function isListedVpnIp(address) {
 
 async function refreshVpnRanges() {
   try {
-    const responses = await Promise.all(VPN_LIST_URLS.map((url) => fetch(url, { signal: AbortSignal.timeout(15000) })));
-    if (responses.some((response) => !response.ok)) throw new Error(`VPN list download failed (${responses.map((response) => response.status).join(', ')})`);
-    const contents = await Promise.all(responses.map((response) => response.text()));
+    const results = await Promise.allSettled(VPN_LIST_URLS.map(async (url) => {
+      const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw new Error(`${response.status} ${url}`);
+      return response.text();
+    }));
+    const contents = results.filter((result) => result.status === 'fulfilled').map((result) => result.value);
+    const failures = results.filter((result) => result.status === 'rejected');
+    if (failures.length) console.error(`[AntiAlt] ${failures.length} VPN list source(s) failed; continuing with available sources`);
     const combined = contents.join('\n');
     const parsed = parseVpnRanges(combined);
     if (parsed.length < 1000) throw new Error(`VPN list was unexpectedly small (${parsed.length} ranges)`);
@@ -539,7 +578,7 @@ bot.onButton(/^antialt:verify:/, async (interaction) => {
   const remainingRecords = Object.entries(serverRecords).filter(([, record]) => String(record.requested_by_user_id) === String(interaction.user_id));
   const existingVerification = remainingRecords.find(([accountId, record]) => record.manual || String(accountId) === String(interaction.user_id))?.[1]
     || remainingRecords[0]?.[1];
-  if (existingVerification && !existingVerification.manual && (existingVerification.fingerprint_version !== 2 || existingVerification.privacy_version !== '4')) {
+  if (existingVerification && !existingVerification.manual && (existingVerification.fingerprint_version !== 2 || existingVerification.terms_version !== TERMS_VERSION || existingVerification.privacy_version !== PRIVACY_VERSION)) {
     const linkToken = randomBytes(32).toString('hex');
     const authcode = randomBytes(32).toString('hex');
     const accountId = Object.keys(verifiedUsers[serverId]).find((id) => verifiedUsers[serverId][id] === existingVerification);
@@ -592,35 +631,97 @@ bot.onButton(/^antialt:verify:/, async (interaction) => {
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const readCookie = (header, name) => {
   const part = String(header || '').split(';').map((value) => value.trim()).find((value) => value.startsWith(`${name}=`));
-  return part ? decodeURIComponent(part.slice(name.length + 1)) : null;
+  return part ? part.slice(name.length + 1) : null;
 };
-const consentForm = (language, consentId) => `<p>${escapeHtml(language.consentQuestion)}</p><h2>${escapeHtml(language.termsTitle)}</h2><p>${escapeHtml(language.termsText)}</p><h2>${escapeHtml(language.privacyTitle)}</h2><p>${escapeHtml(language.privacyText)}</p><form method="post" action="/consent"><input type="hidden" name="consent_id" value="${escapeHtml(consentId)}"><button name="decision" value="yes">${escapeHtml(language.consentYes)}</button> <button name="decision" value="no">${escapeHtml(language.consentNo)}</button></form>`;
+const consentForm = (language, consentId, errorMessage = '') => `${errorMessage ? `<p role="alert">${escapeHtml(errorMessage)}</p>` : ''}<p>${escapeHtml(language.consentQuestion)}</p><nav class="policy-links"><button type="button" data-policy-open="terms">${escapeHtml(language.termsTitle)}</button><button type="button" data-policy-open="privacy">${escapeHtml(language.privacyTitle)}</button></nav><form method="post" action="/consent"><input type="hidden" name="consent_id" value="${escapeHtml(consentId)}"><input type="hidden" name="device_fingerprint" value=""><label class="check-label"><input type="checkbox" name="agree" value="yes" required><span class="checkbox-mark" aria-hidden="true"></span><span>${escapeHtml(language.consentCheckboxLabel)}</span></label><label class="check-label"><input type="checkbox" name="device_consent" value="yes" required><span class="checkbox-mark" aria-hidden="true"></span><span>${escapeHtml(language.deviceConsentCheckboxLabel)}</span></label><label class="check-label"><input type="checkbox" name="remember" value="yes"><span class="checkbox-mark" aria-hidden="true"></span><span>${escapeHtml(language.rememberConsentLabel)}</span></label><div><button name="decision" value="yes">${escapeHtml(language.consentYes)}</button> <button name="decision" value="no" formnovalidate>${escapeHtml(language.consentNo)}</button></div></form><dialog id="policy-dialog" aria-label="${escapeHtml(language.termsTitle)} / ${escapeHtml(language.privacyTitle)}"><button class="dialog-close" type="button" aria-label="Close">×</button><article data-policy-content="terms"><h2>${escapeHtml(language.termsTitle)}</h2><p>${escapeHtml(language.termsText)}</p></article><article data-policy-content="privacy"><h2>${escapeHtml(language.privacyTitle)}</h2><p>${escapeHtml(language.privacyText)}</p></article></dialog><script src="/consent.js" defer></script>`;
 const htmlPage = (title, body) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>${escapeHtml(title)}</title><style>
-:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8edf5;background:#0b1020}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:28px;background:radial-gradient(ellipse at top,#182442 0,#0b1020 58%)}main{width:min(100%,680px);padding:clamp(24px,5vw,42px);border:1px solid #28344b;border-radius:18px;background:#111827;box-shadow:0 24px 80px #0006}h1{margin:0 0 20px;font-size:clamp(1.55rem,4vw,2rem);letter-spacing:-.03em}h2{margin:24px 0 8px;font-size:1rem;color:#c8d4e8}p{margin:0 0 14px;color:#aebbd0;line-height:1.65}form{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}button{min-height:44px;padding:0 18px;border:1px solid #3a4963;border-radius:10px;background:#202c40;color:#eef4ff;font:600 .95rem/1.2 system-ui,sans-serif;cursor:pointer}button:hover{background:#2b3b56}button[value="yes"]{border-color:#4d8b70;background:#226444}button[value="yes"]:hover{background:#2a7954}button:focus-visible{outline:3px solid #8ab4ff;outline-offset:2px}@media(prefers-reduced-motion:no-preference){button{transition:background .15s ease}}
+:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#e8edf5;background:#0b1020}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:28px;background:radial-gradient(ellipse at top,#182442 0,#0b1020 58%)}main{width:min(100%,680px);padding:clamp(24px,5vw,42px);border:1px solid #28344b;border-radius:18px;background:#111827;box-shadow:0 24px 80px #0006}h1{margin:0 0 20px;font-size:clamp(1.55rem,4vw,2rem);letter-spacing:-.03em}h2{margin:24px 0 8px;font-size:1rem;color:#c8d4e8}p{margin:0 0 14px;color:#aebbd0;line-height:1.65}.policy-links{display:flex;flex-wrap:wrap;gap:12px;margin:20px 0 8px}.policy-links button{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border:1px solid #3a4963;border-radius:10px;background:#202c40;color:#9cc4ff;font-weight:600;text-decoration:none}.policy-links button:hover{background:#2b3b56;color:#c1d8ff}form{display:flex;flex-direction:column;align-items:flex-start;gap:14px;margin-top:28px}.check-label{position:relative;display:flex;align-items:flex-start;gap:10px;color:#c6d0df;line-height:1.5;cursor:pointer}.check-label input{position:absolute;width:22px;height:22px;margin:0;opacity:0;cursor:pointer}.checkbox-mark{display:grid;place-items:center;width:20px;height:20px;margin:1px 0 0;flex:none;border:1px solid #52627a;border-radius:6px;background:#0d1524;transition:background .15s ease,border-color .15s ease,box-shadow .15s ease}.checkbox-mark::after{content:"";width:9px;height:5px;border:solid #fff;border-width:0 0 2px 2px;transform:rotate(-45deg) translate(1px,-1px);opacity:0}.check-label input:checked+.checkbox-mark{border-color:#58b987;background:#258253}.check-label input:checked+.checkbox-mark::after{opacity:1}.check-label input:focus-visible+.checkbox-mark{outline:3px solid #8ab4ff;outline-offset:3px}.check-label:hover .checkbox-mark{border-color:#79a9ff}button{min-height:44px;padding:0 18px;border:1px solid #3a4963;border-radius:10px;background:#202c40;color:#eef4ff;font:600 .95rem/1.2 system-ui,sans-serif;cursor:pointer}button:hover{background:#2b3b56}button[value="yes"]{border-color:#4d8b70;background:#226444}button[value="yes"]:hover{background:#2a7954}button:focus-visible{outline:3px solid #8ab4ff;outline-offset:2px}dialog#policy-dialog{position:fixed;inset:0;margin:auto;width:min(680px,calc(100% - 32px));max-height:min(80vh,720px);overflow:auto;padding:clamp(22px,5vw,36px);border:1px solid #3a4963;border-radius:18px;background:#111827;color:#e8edf5;box-shadow:0 24px 90px #000b}dialog#policy-dialog::backdrop{background:#050914c9;backdrop-filter:blur(5px)}dialog#policy-dialog h2{margin:0 48px 18px 0;font-size:1.35rem}dialog#policy-dialog p{white-space:normal;line-height:1.8}.dialog-close{position:sticky;float:right;top:0;width:40px;min-height:40px;padding:0;font-size:1.5rem;line-height:1}.dialog-close:hover{background:#3b2630}@media(prefers-reduced-motion:no-preference){button,.checkbox-mark{transition:background .15s ease,border-color .15s ease,box-shadow .15s ease}}
 </style></head><body><main><h1>${escapeHtml(title)}</h1>${body}</main></body></html>`;
 
 
 function getConsentClientIp(req) {
   let address = req.socket.remoteAddress || '';
-  if (process.env.ANTIALT_TRUST_PROXY === 'true') {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string' && forwarded.trim()) address = forwarded.split(',')[0].trim();
+  const proxyHeaderNames = ['cf-connecting-ip', 'true-client-ip', 'x-real-ip', 'x-forwarded-for'];
+  const proxyHeaderName = proxyHeaderNames.find((name) => req.headers[name]);
+  const socketIp = address.toLowerCase().replace(/^::ffff:/, '');
+  const localTunnelProxy = ['127.0.0.1', '::1'].includes(socketIp) && !!proxyHeaderName;
+  if (process.env.ANTIALT_TRUST_PROXY === 'true' || localTunnelProxy) {
+    const forwarded = proxyHeaderName ? req.headers[proxyHeaderName] : null;
+    if (typeof forwarded !== 'string' || !forwarded.trim()) return null;
+    const forwardedAddresses = forwarded.split(',').map((part) => part.trim()).filter(Boolean);
+    if (forwardedAddresses.length !== 1) return null;
+    address = forwardedAddresses[0];
   }
-  address = address.trim().toLowerCase().replace(/^::ffff:/, '');
-  if (!address || address === '::1' || address.startsWith('127.')) return null;
-  return address;
+  address = address.trim().toLowerCase();
+  if (address.startsWith('[')) {
+    const closingBracket = address.indexOf(']');
+    if (closingBracket < 0) return null;
+    address = address.slice(1, closingBracket);
+  } else if (/^\d{1,3}(?:\.\d{1,3}){3}:\d+$/.test(address)) {
+    address = address.slice(0, address.lastIndexOf(':'));
+  }
+  address = address.replace(/^::ffff:/, '').replace(/%[a-z0-9_.-]+$/, '');
+  const parsed = ipToBigInt(address);
+  if (!parsed || parsed.value === 0n || (parsed.family === 4 && Number((parsed.value >> 24n) & 255n) === 127) || (parsed.family === 6 && parsed.value === 1n)) return null;
+  return { address, hashInput: `${parsed.family}:${parsed.value.toString(16).padStart(parsed.family === 4 ? 8 : 32, '0')}` };
 }
-function keyedIpHash(ip) {
+function getIpHashKey() {
   if (!ipHashKey) {
     try { ipHashKey = readFileSync(IP_HASH_KEY_FILE); }
     catch (error) {
       if (error.code !== 'ENOENT') throw error;
       mkdirSync(DATA_DIR, { recursive: true });
-      ipHashKey = randomBytes(32);
-      writeFileSync(IP_HASH_KEY_FILE, ipHashKey, { flag: 'wx', mode: 0o600 });
+      const generatedKey = randomBytes(32);
+      try {
+        writeFileSync(IP_HASH_KEY_FILE, generatedKey, { flag: 'wx', mode: 0o600 });
+        ipHashKey = generatedKey;
+      } catch (writeError) {
+        if (writeError.code !== 'EEXIST') throw writeError;
+        ipHashKey = readFileSync(IP_HASH_KEY_FILE);
+      }
     }
+    if (ipHashKey.length !== 32) throw new Error('The IP hash key must contain exactly 32 bytes. Remove the invalid local key file to generate a new one.');
   }
-  return createHmac('sha256', ipHashKey).update(ip).digest('hex');
+  return ipHashKey;
+}
+function keyedIpHash(ip, serverId, legacy = false) {
+  const key = getIpHashKey();
+  return createHmac('sha256', key).update(legacy ? ip : `server:${serverId}\0ip:${ip}`).digest('hex');
+}
+function rememberedConsentToken(accountId, deviceCookie, acceptedAt, fingerprintHash) {
+  const payload = Buffer.from(JSON.stringify({
+    account: createHash('sha256').update(String(accountId)).digest('hex'),
+    browser: createHash('sha256').update(String(deviceCookie)).digest('hex'),
+    terms: TERMS_VERSION,
+    privacy: PRIVACY_VERSION,
+    acceptedAt,
+    fingerprintHash,
+  })).toString('base64url');
+  const signature = createHmac('sha256', getIpHashKey()).update(`remember-consent\0${payload}`).digest('hex');
+  return `${payload}.${signature}`;
+}
+function readRememberedConsent(cookieHeader, accountId, deviceCookie) {
+  const token = readCookie(cookieHeader, 'antialt_consent');
+  if (!token || token.length > 2048) return null;
+  const [payload, suppliedSignature, extra] = token.split('.');
+  if (!payload || !suppliedSignature || extra !== undefined || !/^[a-f0-9]{64}$/.test(suppliedSignature)) return null;
+  let expectedSignature;
+  try { expectedSignature = createHmac('sha256', getIpHashKey()).update(`remember-consent\0${payload}`).digest('hex'); }
+  catch (error) {
+    console.error('[AntiAlt] remembered consent validation failed:', error.message);
+    return null;
+  }
+  const supplied = Buffer.from(suppliedSignature, 'hex');
+  const expected = Buffer.from(expectedSignature, 'hex');
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return null;
+  let saved;
+  try { saved = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); }
+  catch { return null; }
+  const accountHash = createHash('sha256').update(String(accountId)).digest('hex');
+  const browserHash = createHash('sha256').update(String(deviceCookie)).digest('hex');
+  if (saved.terms !== TERMS_VERSION || saved.privacy !== PRIVACY_VERSION || saved.account !== accountHash || saved.browser !== browserHash || !Number.isFinite(Date.parse(saved.acceptedAt))) return null;
+  if (typeof saved.fingerprintHash !== 'string' || !/^[a-f0-9]{64}$/.test(saved.fingerprintHash)) return null;
+  return { acceptedAt: saved.acceptedAt, fingerprintHash: saved.fingerprintHash };
 }
 
 const callbackUrl = new URL(OAUTH_CALLBACK);
@@ -629,13 +730,122 @@ const isPublicHttpsCallback = callbackUrl.protocol === 'https:' && !['localhost'
 if ((!isLocalHttpCallback && !isPublicHttpsCallback) || !Number.isInteger(OAUTH_PORT) || OAUTH_PORT < 1 || OAUTH_PORT > 65535 || callbackUrl.pathname !== '/callback') {
   throw new Error('AUTH_TOKEN_WEBSITE_CALLBACK must be an HTTPS /callback URL or a localhost HTTP /callback URL.');
 }
+if (isPublicHttpsCallback && process.env.ANTIALT_TRUST_PROXY !== 'true') {
+  console.warn('[AntiAlt] public HTTPS callback detected but ANTIALT_TRUST_PROXY is not true; only recognized proxy headers arriving over loopback will be trusted. Set it to true only for a proxy you control when it connects from another address.');
+}
 
 createServer(async (req, res) => {
   const requestUrl = new URL(req.url || '/', OAUTH_CALLBACK);
   const sendPage = (status, title, body, extraHeaders = {}) => {
-    res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', ...extraHeaders });
+    res.writeHead(status, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'referrer-policy': 'no-referrer',
+      'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+      'x-content-type-options': 'nosniff',
+      'x-frame-options': 'DENY',
+      ...extraHeaders,
+    });
     res.end(htmlPage(title, body));
   };
+  const completeVerification = async (pending, request, rememberDecision) => {
+    const language = LANGUAGES[pending.language] || LANGUAGES.en;
+    const consentIp = getConsentClientIp(request);
+    if (!consentIp && isPublicHttpsCallback) {
+      console.warn('[AntiAlt] refused verification because no valid client IP was received; check ANTIALT_TRUST_PROXY and the proxy client-IP header.');
+      return sendPage(503, 'Connection check unavailable', `<p>${escapeHtml(language.ipSecurityUnavailable)}</p>`);
+    }
+    if (consentIp && vpnRanges.length && isListedVpnIp(consentIp.address)) {
+      return sendPage(403, 'VPN verification blocked', `<p>${escapeHtml(language.vpnBlocked)}</p>`);
+    }
+
+    const identity = pending.identity;
+    const accountId = identity.id;
+    const username = identity.username;
+    const serverRecords = verifiedUsers[pending.serverId] ||= {};
+    const deviceHash = createHash('sha256').update(pending.deviceCookie).digest('hex');
+    let ipHash = null;
+    let legacyIpHash = null;
+    let fingerprintHash = null;
+    let rememberedToken = null;
+    const acceptedAt = pending.rememberedConsentAt || new Date().toISOString();
+    try {
+      ipHash = consentIp ? keyedIpHash(consentIp.hashInput, pending.serverId) : null;
+      legacyIpHash = consentIp ? keyedIpHash(consentIp.address, pending.serverId, true) : null;
+      const fingerprintDigest = pending.deviceFingerprintDigest;
+      if (fingerprintDigest) {
+        if (!/^[a-f0-9]{64}$/.test(fingerprintDigest)) return sendPage(400, 'Fingerprint unavailable', `<p>${escapeHtml(language.fingerprintUnavailable)}</p>`);
+        fingerprintHash = createHmac('sha256', getIpHashKey()).update(`server:${pending.serverId}\0browser-fingerprint:${fingerprintDigest}`).digest('hex');
+      } else {
+        fingerprintHash = pending.rememberedFingerprintHash || null;
+      }
+      if (!fingerprintHash) return sendPage(400, 'Fingerprint unavailable', `<p>${escapeHtml(language.fingerprintUnavailable)}</p>`);
+      if (rememberDecision) rememberedToken = rememberedConsentToken(accountId, pending.deviceCookie, acceptedAt, fingerprintHash);
+    } catch (error) {
+      console.error('[AntiAlt] secure consent/IP processing failed:', error.message);
+      return sendPage(503, 'Connection check unavailable', `<p>${escapeHtml(language.ipSecurityUnavailable)}</p>`);
+    }
+
+    const duplicateMatch = Object.entries(serverRecords).find(([savedAccountId, record]) => savedAccountId !== accountId && record.fingerprint_version === 2 && ((record.device_hash === deviceHash) || (record.fingerprint_hash === fingerprintHash) || (ipHash && record.ip_hash === ipHash) || (legacyIpHash && !record.ip_hash_version && record.ip_hash === legacyIpHash)));
+    if (duplicateMatch) {
+      if (pending.deviceRebind && serverRecords[accountId]?.requested_by_user_id === pending.userId) {
+        delete serverRecords[accountId];
+        try { saveVerifications(); } catch (error) { console.error('[AntiAlt] could not revoke duplicate verification record:', error.message); }
+        const roleId = serverSettings[pending.serverId]?.authenticatedRoleId;
+        if (roleId) {
+          try { await bot.removeRole(pending.serverId, pending.userId, roleId); }
+          catch (error) { console.error('[AntiAlt] could not remove role from duplicate account:', error.message); }
+        }
+      }
+      return sendPage(409, language.duplicateBrowserTitle, `<p>${escapeHtml(language.duplicateBrowser)}</p>`);
+    }
+
+    const existing = serverRecords[accountId];
+    if (existing && !(pending.deviceRebind && existing.requested_by_user_id === pending.userId)) {
+      return sendPage(409, 'Already verified', `<p>This account is already verified in this server as <strong>${escapeHtml(existing.username || username)}</strong>.</p>`);
+    }
+    serverRecords[accountId] = {
+      ...existing,
+      username,
+      requested_by_user_id: pending.userId,
+      device_hash: deviceHash,
+      fingerprint_hash: fingerprintHash,
+      ip_hash: ipHash || existing?.ip_hash || null,
+      ip_hash_version: ipHash ? 2 : existing?.ip_hash_version || null,
+      fingerprint_version: 2,
+      consented_at: acceptedAt,
+      verified_at: new Date().toISOString(),
+      terms_version: TERMS_VERSION,
+      privacy_version: PRIVACY_VERSION,
+    };
+    try { saveVerifications(); }
+    catch (error) {
+      if (existing) serverRecords[accountId] = existing;
+      else delete serverRecords[accountId];
+      if (!Object.keys(serverRecords).length) delete verifiedUsers[pending.serverId];
+      console.error('[AntiAlt] could not save verification:', error.message);
+      return sendPage(500, 'Verification could not be saved', `<p>${escapeHtml(language.saveFailed)}</p>`);
+    }
+
+    let roleWarning = '';
+    try {
+      const roleResult = await ensureAuthenticatedRole(pending.serverId, pending.userId);
+      if (roleResult.status === 'missing') roleWarning = `<p>${escapeHtml(language.authenticatedRoleMissing(roleResult.roleName))}</p>`;
+    } catch (error) {
+      console.error('[AntiAlt] verified account but role assignment failed:', error.message);
+      roleWarning = `<p>${escapeHtml(language.roleAssignFailed)}</p>`;
+    }
+    const secure = callbackUrl.protocol === 'https:' ? '; Secure' : '';
+    const cookies = [`antialt_device=${pending.deviceCookie}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000${secure}`];
+    if (rememberedToken) cookies.push(`antialt_consent=${rememberedToken}; HttpOnly; SameSite=Lax; Path=/; Max-Age=315360000${secure}`);
+    else if (rememberDecision === false) cookies.push(`antialt_consent=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`);
+    return sendPage(200, 'Verified', `<p>${escapeHtml(language.oauthComplete)}</p>${roleWarning}`, { 'set-cookie': cookies });
+  };
+  if (requestUrl.pathname === '/consent.js' && req.method === 'GET') {
+    const script = `document.addEventListener('DOMContentLoaded',()=>{const form=document.querySelector('form[action="/consent"]');const dialog=document.querySelector('#policy-dialog');if(dialog){const close=dialog.querySelector('.dialog-close');document.querySelectorAll('[data-policy-open]').forEach(button=>button.addEventListener('click',()=>{dialog.querySelectorAll('[data-policy-content]').forEach(section=>section.hidden=section.dataset.policyContent!==button.dataset.policyOpen);dialog.showModal()}));close.addEventListener('click',()=>dialog.close());dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close()})}if(!form)return;form.addEventListener('submit',async event=>{if(event.submitter?.value!=='yes'||!form.elements.agree.checked||!form.elements.device_consent.checked)return;event.preventDefault();const s=window.screen||{};const details={userAgent:navigator.userAgent||'',platform:navigator.platform||'',language:navigator.language||'',languages:Array.from(navigator.languages||[]),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'',screenWidth:s.width||0,screenHeight:s.height||0,colorDepth:s.colorDepth||0,pixelRatio:window.devicePixelRatio||1,hardwareConcurrency:navigator.hardwareConcurrency||null,deviceMemory:navigator.deviceMemory||null};try{const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(details)));form.elements.device_fingerprint.value=Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,'0')).join('');form.submit()}catch{form.elements.device_fingerprint.value='';form.submit()}})})`;
+    res.writeHead(200, { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+    return res.end(script);
+  }
   if (requestUrl.pathname === '/authenticate' && req.method === 'GET') {
     const linkToken = requestUrl.searchParams.get('token') || '';
     const authcode = requestUrl.searchParams.get('authcode') || '';
@@ -706,6 +916,8 @@ createServer(async (req, res) => {
       console.warn(`[AntiAlt] rejected OAuth identity mismatch for server ${pending.serverId}; the verification link belongs to user ${pending.userId}`);
       return sendPage(403, 'Account mismatch', `<p>${escapeHtml(language.oauthAccountMismatch)}</p>`);
     }
+    const rememberedConsent = readRememberedConsent(req.headers.cookie, identity.id, pending.deviceCookie);
+    if (rememberedConsent) return completeVerification({ ...pending, identity, rememberedConsentAt: rememberedConsent.acceptedAt, rememberedFingerprintHash: rememberedConsent.fingerprintHash }, req, true);
     const consentId = randomBytes(24).toString('base64url');
     pendingConsent.set(consentId, { ...pending, identity, expiresAt: Date.now() + 5 * 60 * 1000 });
     return sendPage(200, 'AntiAlt verification', consentForm(language, consentId));
@@ -723,63 +935,17 @@ createServer(async (req, res) => {
       pendingConsent.delete(consentId);
       return sendPage(400, 'Verification expired', '<p>Return to Yapin’ and click Verify again.</p>');
     }
-    pendingConsent.delete(consentId);
     const language = LANGUAGES[pending.language] || LANGUAGES.en;
-    if (form.get('decision') !== 'yes') return sendPage(200, 'Consent declined', `<p>${escapeHtml(language.consentDeclined)}</p>`);
-
-    const consentIp = getConsentClientIp(req);
-    if (consentIp && vpnRanges.length && isListedVpnIp(consentIp)) {
-      return sendPage(403, 'VPN verification blocked', `<p>${escapeHtml(language.vpnBlocked)}</p>`);
+    if (form.get('decision') === 'no' || (form.get('decision') !== 'yes' && form.get('agree') !== 'yes')) {
+      pendingConsent.delete(consentId);
+      return sendPage(200, 'Consent declined', `<p>${escapeHtml(language.consentDeclined)}</p>`);
     }
-
-    const identity = pending.identity;
-    const accountId = identity.id;
-    const username = identity.username;
-      const serverRecords = verifiedUsers[pending.serverId] ||= {};
-      const deviceHash = createHash('sha256').update(pending.deviceCookie).digest('hex');
-      const ipHash = consentIp ? keyedIpHash(consentIp) : null;
-      const duplicateMatch = Object.entries(serverRecords).find(([savedAccountId, record]) => savedAccountId !== accountId && record.fingerprint_version === 2 && ((record.device_hash === deviceHash) || (ipHash && record.ip_hash === ipHash)));
-      if (duplicateMatch) {
-        if (pending.deviceRebind && serverRecords[accountId]?.requested_by_user_id === pending.userId) {
-          delete serverRecords[accountId];
-          try { saveVerifications(); } catch (error) { console.error('[AntiAlt] could not revoke duplicate verification record:', error.message); }
-          const roleId = serverSettings[pending.serverId]?.authenticatedRoleId;
-          if (roleId) {
-            try { await bot.removeRole(pending.serverId, pending.userId, roleId); }
-            catch (error) { console.error('[AntiAlt] could not remove role from duplicate account:', error.message); }
-          }
-        }
-        return sendPage(409, language.duplicateBrowserTitle, `<p>${escapeHtml(language.duplicateBrowser)}</p>`);
-      }
-      const existing = serverRecords[accountId];
-      if (existing && !(pending.deviceRebind && existing.requested_by_user_id === pending.userId)) {
-        return sendPage(409, 'Already verified', `<p>This account is already verified in this server as <strong>${escapeHtml(existing.username || username)}</strong>.</p>`);
-      }
-      serverRecords[accountId] = {
-        ...existing,
-        username,
-        requested_by_user_id: pending.userId,
-        device_hash: deviceHash,
-        ip_hash: ipHash || existing?.ip_hash || null,
-        fingerprint_version: 2,
-        consented_at: new Date().toISOString(),
-        verified_at: new Date().toISOString(),
-        terms_version: '4',
-        privacy_version: '4',
-      };
-      try { saveVerifications(); }
-      catch (error) { delete serverRecords[accountId]; throw error; }
-    const languageForPending = LANGUAGES[pending.language] || LANGUAGES.en;
-    let roleWarning = '';
-    try {
-      const roleResult = await ensureAuthenticatedRole(pending.serverId, pending.userId);
-      if (roleResult.status === 'missing') roleWarning = `<p>${escapeHtml(languageForPending.authenticatedRoleMissing(roleResult.roleName))}</p>`;
-    } catch (error) {
-      console.error('[AntiAlt] verified account but role assignment failed:', error.message);
-      roleWarning = `<p>${escapeHtml(languageForPending.roleAssignFailed)}</p>`;
-    }
-    const deviceCookieHeader = `antialt_device=${pending.deviceCookie}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`;
-    return sendPage(200, 'Verified', `<p>${escapeHtml(languageForPending.oauthComplete)}</p>${roleWarning}`, { 'set-cookie': deviceCookieHeader });
+    if (form.get('agree') !== 'yes') return sendPage(400, 'Agreement required', consentForm(language, consentId, language.consentRequiredError));
+    if (form.get('device_consent') !== 'yes') return sendPage(400, 'Fingerprint consent required', consentForm(language, consentId, language.deviceConsentRequiredError));
+    const deviceFingerprintDigest = form.get('device_fingerprint') || '';
+    if (!/^[a-f0-9]{64}$/.test(deviceFingerprintDigest)) return sendPage(400, 'Fingerprint unavailable', consentForm(language, consentId, language.fingerprintUnavailable));
+    pendingConsent.delete(consentId);
+    return completeVerification({ ...pending, deviceFingerprintDigest }, req, form.get('remember') === 'yes');
   }
   res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
   res.end('Not found');
